@@ -1,94 +1,21 @@
 from Base import all
 import Base.Network.Http.Method
-polyglot java import com.sun.net.httpserver.HttpServer
-polyglot java import java.net.InetSocketAddress
-
-type My_Handler
-    type My_Handler handler
-
-    handle t =
-        is = t.getRequestBody
-        request_body = Text.from_utf_8 (Vector.Vector is.readAllBytes)
-        response = this.handler request_body
-        t.sendResponseHeaders 200 response.length
-        os = t.getResponseBody
-        os.write response.utf_8.to_array
-        os.close
-
-start handler_fn =
-    server = HttpServer.create (InetSocketAddress.new 8000) 0
-    server.createContext "/" (My_Handler handler_fn)
-    server.setExecutor Nothing
-    IO.println "Starting Server..."
-    server.start
-
-type Method_Handlers
-    type Method_Handlers handlers_map
-
-    handle t =
-        is = t.getRequestBody
-        request_body = Text.from_utf_8 (Vector.Vector is.readAllBytes)
-        method = t.getRequestMethod
-        handler = this.handlers_map.get method
-        case handler of
-            Nothing ->
-                t.sendResponseHeaders 404 0
-                t.getResponseBody.close
-            h ->
-                response = h request_body
-                t.sendResponseHeaders 200 response.length
-                os = t.getResponseBody
-                os.write response.utf_8.to_array
-                os.close
-
-    add_handler verb handler_fn =
-        verb_str = case verb of
-            Method.Get -> "GET"
-            Method.Post -> "POST"
-        new_handler_map = this.handlers_map.insert verb_str handler_fn
-        Method_Handlers new_handler_map
-
-
-
-
-type Server
-    type Server java_server route_handlers
-
-    start =
-        this.route_handlers.each_with_key path-> handler->
-            this.java_server.createContext path handler
-        this.java_server.start
-
-    add_route path verb handler_fn =
-        existing_handler = this.route_handlers.get path
-        new_handler = case existing_handler of
-            Nothing -> Method_Handlers Map.empty . add_handler verb handler_fn
-            handlers -> handlers.add_handler verb handler_fn
-        new_route_handlers = this.route_handlers.insert path new_handler
-        Server this.java_server new_route_handlers
-
-
-create_server =
-    server = HttpServer.create (InetSocketAddress.new 8000) 0
-    server.setExecutor Nothing
-    Server server Map.empty
+import Http_Server.Server
 
 type My_Response bar
 
 main =
-    server = here.create_server
-    s1 = server.add_route "/" Method.Get req->
-        req_json = Json.parse req
-        IO.println ("Foo GET is: " + (req_json.get "foo").to_text)
-        My_Response 42 . to_json . to_text
-    s2 = s1.add_route "/" Method.Post req->
-        req_json = Json.parse req
-        IO.println ("Foo POST is: " + (req_json.get "foo").to_text)
-        My_Response 41 . to_json . to_text
-    s3 = s2.add_route "/endpoint" Method.Get req->
-        IO.println ("Hit the endpoint " + req)
-        My_Response 31 . to_json . to_text
-    s3.start
+    server = Server.create <|
+        Server.route "/a/" Method.Get req->
+            IO.println "Route A"
+            My_Response 42 . to_json . to_text
+        Server.route "/b/" Method.Get req->
+            IO.println "Route B"
+            My_Response 31 . to_json . to_text
+        Server.route "/b/c/" Method.Get req->
+            IO.println "Route B/C"
+            My_Response 20 . to_json . to_text
+    server.start
     IO.println "Server started"
     IO.readln
 
