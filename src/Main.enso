@@ -8,19 +8,51 @@ foreign js load_ejs path = """
     load(path);
     return ejs;
 
+foreign js render_index ejs cookies = """
+    var template = `
+        <html>
+          <body>
+            <form action="/cookies/" method="post">
+              <input type="text" name="name" />
+              <input type="Submit" value="Bake!" />
+            </form>
+            <ul>
+              <ul>
+                <% cookies.to_array.forEach(function (cookie) { %>
+                  <li>
+                    <%= cookie.name %>
+                    <form action="/cookies/eat/" method="post">
+                      <input type="hidden" name="name" value="<%= cookie.name %>" />
+                      <input type="Submit" value="Eat!" />
+                    </form>
+                <% }); %>
+              </ul>
+            </ul>
+          </body>
+        </html>
+    `;
+    return ejs.render(template, {cookies: cookies});
+
+
 type Cookie name
 
 type Bakery
     type Bakery cookies
+    type Sold_Out
 
-    add_cookie new_cookie =
-        Bakery ([new_cookie] + this.cookies)
+    add_cookie cookie = case this of
+        Bakery cookies -> Bakery (cookies + [cookie])
+        Sold_Out -> Bakery [cookie]
 
-    store file =
-        file.write this.to_json.to_text
+    remove_cookie_by_name name = case this of
+        Bakery cookies ->
+            new_cookies = cookies.filter c-> (c.name == name).not
+            if new_cookies.is_empty then Sold_Out else Bakery new_cookies
+        Sold_Out -> Sold_Out
 
-    remove_cookie_by_name name =
-        Bakery (this.cookies.filter c-> (c.name == name).not)
+    get_cookies = case this of
+        Bakery cookies -> cookies
+        Sold_Out -> []
 
 parse_name urlencoded =
     decoded = URLDecoder.decode urlencoded "UTF-8"
@@ -33,38 +65,25 @@ main =
     p = file.absolute.path
     ejs = here.load_ejs p
 
-    storage_file = Enso_Project.data / 'cookies.json'
-
-    index_template = (Enso_Project.data / 'assets' / 'index.ejs').read
-
-    initial_cookies_json = Json.parse storage_file.read
-    cookies = initial_cookies_json.into (Bakery (Vector.Vector (Cookie Text)))
-
-    state = Ref.new cookies
+    state = Ref.new Sold_Out
 
     server = Server.create <|
         Server.route "/cookies/" Method.Get _->
-            current_cookies = Ref.get state
-            ejs.render index_template current_cookies
+            current_cookies = Ref.get state . get_cookies
+            here.render_index ejs current_cookies
         Server.route "/cookies/" Method.Post req->
             bakery = Ref.get state
             value = here.parse_name req
             new_cookie = Cookie value
             new_bakery = bakery.add_cookie new_cookie
-            IO.println new_bakery
             Ref.put state new_bakery
-            new_bakery.store storage_file
-            ejs.render index_template new_bakery
+            here.render_index ejs new_bakery.get_cookies
         Server.route "/cookies/eat/" Method.Post req->
             bakery = Ref.get state
-            IO.println req
             name = here.parse_name req
-            IO.println ("Removing " + name)
             new_bakery = bakery.remove_cookie_by_name name
-            IO.println new_bakery
             Ref.put state new_bakery
-            new_bakery.store storage_file
-            ejs.render index_template new_bakery
+            here.render_index ejs new_bakery.get_cookies
 
     server.start
     IO.println "Server started"
