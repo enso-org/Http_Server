@@ -2,19 +2,70 @@ from Base import all
 import Base.Network.Http.Method
 import Http_Server.Server
 
-type My_Response bar
+polyglot java import java.net.URLDecoder
+
+foreign js load_ejs path = """
+    load(path);
+    return ejs;
+
+type Cookie name
+
+type Bakery
+    type Bakery cookies
+
+    add_cookie new_cookie =
+        Bakery ([new_cookie] + this.cookies)
+
+    store file =
+        file.write this.to_json.to_text
+
+    remove_cookie_by_name name =
+        Bakery (this.cookies.filter c-> (c.name == name).not)
+
+parse_name urlencoded =
+    decoded = URLDecoder.decode urlencoded "UTF-8"
+    parts = decoded.split "="
+    value = parts . drop_start 1 . join '='
+    value
 
 main =
+    file = Enso_Project.root / 'polyglot' / 'js' / 'ejs.js'
+    p = file.absolute.path
+    ejs = here.load_ejs p
+
+    storage_file = Enso_Project.data / 'cookies.json'
+
+    index_template = (Enso_Project.data / 'assets' / 'index.ejs').read
+
+    initial_cookies_json = Json.parse storage_file.read
+    cookies = initial_cookies_json.into (Bakery (Vector.Vector (Cookie Text)))
+
+    state = Ref.new cookies
+
     server = Server.create <|
-        Server.route "/a/" Method.Get req->
-            IO.println "Route A"
-            My_Response 42 . to_json . to_text
-        Server.route "/b/" Method.Get req->
-            IO.println "Route B"
-            My_Response 31 . to_json . to_text
-        Server.route "/b/c/" Method.Get req->
-            IO.println "Route B/C"
-            My_Response 20 . to_json . to_text
+        Server.route "/cookies/" Method.Get _->
+            current_cookies = Ref.get state
+            ejs.render index_template current_cookies
+        Server.route "/cookies/" Method.Post req->
+            bakery = Ref.get state
+            value = here.parse_name req
+            new_cookie = Cookie value
+            new_bakery = bakery.add_cookie new_cookie
+            IO.println new_bakery
+            Ref.put state new_bakery
+            new_bakery.store storage_file
+            ejs.render index_template new_bakery
+        Server.route "/cookies/eat/" Method.Post req->
+            bakery = Ref.get state
+            IO.println req
+            name = here.parse_name req
+            IO.println ("Removing " + name)
+            new_bakery = bakery.remove_cookie_by_name name
+            IO.println new_bakery
+            Ref.put state new_bakery
+            new_bakery.store storage_file
+            ejs.render index_template new_bakery
+
     server.start
     IO.println "Server started"
     IO.readln

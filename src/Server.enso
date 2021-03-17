@@ -37,7 +37,6 @@ type Server
 
     start =
         this.route_handlers.each_with_key path-> handler->
-            IO.println ("registering " + path)
             this.java_server.createContext path handler
         this.java_server.start
 
